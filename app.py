@@ -9,16 +9,18 @@ st.set_page_config(page_title="Three Anchor Bay Kayak Radio", layout="wide")
 # YouTube Video ID from your link
 YOUTUBE_VIDEO_ID = "_wYENnYaboM"
 
-# Hidden YouTube embed HTML with autoplay and loop
+# Hidden YouTube embed HTML with autoplay, loop, and explicit unmute
 youtube_embed = f"""
 <iframe id="ytplayer" type="text/html" width="0" height="0"
-  src="https://www.youtube.com/embed/{YOUTUBE_VIDEO_ID}?autoplay=1&loop=1&playlist={YOUTUBE_VIDEO_ID}&controls=0&showinfo=0&rel=0"
+  src="https://www.youtube.com/embed/{YOUTUBE_VIDEO_ID}?autoplay=1&mute=0&loop=1&playlist={YOUTUBE_VIDEO_ID}&controls=0&showinfo=0&rel=0"
   frameborder="0" allowfullscreen style="display:none"></iframe>
 """
 
-# Session state for mute toggle
+# Session state for mute toggle and iframe loaded
 if 'muted' not in st.session_state:
-    st.session_state.muted = False  # Start with sound ON
+    st.session_state.muted = True  # Start MUTED to require user interaction
+if 'iframe_loaded' not in st.session_state:
+    st.session_state.iframe_loaded = False
 
 # Header with Radio Toggle Button
 col1, col2 = st.columns([1, 6])
@@ -26,6 +28,7 @@ with col1:
     if st.session_state.muted:
         if st.button("🔇 Radio Off", key="toggle"):
             st.session_state.muted = False
+            st.session_state.iframe_loaded = True  # Load iframe on first unmute
             st.rerun()
         status_emoji = "🔇"
         status_text = "Radio Off"
@@ -42,31 +45,37 @@ with col2:
 st.markdown("""
 Welcome to your AI-powered kayaking companion radio!  
 90s hits play in the background while you check conditions and safety tips for Three Anchor Bay, Cape Town.  
-Use the button above to mute or unmute the music anytime.
+Click the button above to turn on the music (browsers require this for sound playback).
 """)
 
-# Inject hidden YouTube player + JavaScript to control volume
-st.components.v1.html(
-    f"""
-    {youtube_embed if not st.session_state.muted else ''}
-    <script>
-        function toggleMute(muted) {{
-            const iframe = document.getElementById('ytplayer');
-            if (iframe) {{
-                iframe.contentWindow.postMessage(
-                    JSON.stringify({{event: 'command', func: 'setVolume', args: [muted ? 0 : 100]}}),
-                    '*'
-                );
+# Inject hidden YouTube player + JavaScript only if loaded and not muted
+if st.session_state.iframe_loaded and not st.session_state.muted:
+    st.components.v1.html(
+        f"""
+        {youtube_embed}
+        <script>
+            function ensureUnmuted() {{
+                const iframe = document.getElementById('ytplayer');
+                if (iframe) {{
+                    iframe.contentWindow.postMessage(
+                        JSON.stringify({{event: 'command', func: 'setVolume', args: [100]}}),
+                        '*'
+                    );
+                    iframe.contentWindow.postMessage(
+                        JSON.stringify({{event: 'command', func: 'playVideo', args: []}}),
+                        '*'
+                    );
+                }}
             }}
-        }}
-        // Initial mute state
-        toggleMute({str(st.session_state.muted).lower()});
-    </script>
-    """,
-    height=0
-)
+            // Call on load and periodically
+            window.addEventListener('load', ensureUnmuted);
+            setInterval(ensureUnmuted, 2000);
+        </script>
+        """,
+        height=0
+    )
 
-# Weather & Conditions
+# Weather & Conditions (unchanged)
 st.header("🌤️ Current Kayaking Conditions in Three Anchor Bay")
 lat, lon = -33.9083, 18.3958
 
@@ -124,7 +133,7 @@ try:
 except Exception:
     st.error("Weather data temporarily unavailable. Check back soon!")
 
-# Safety Tips
+# Safety Tips (unchanged)
 st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
 
 with st.expander("For Beginners"):
