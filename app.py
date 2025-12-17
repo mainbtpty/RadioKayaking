@@ -6,21 +6,65 @@ from io import BytesIO
 
 st.set_page_config(page_title="Three Anchor Bay Kayak Radio", layout="wide")
 
-# Header
-st.title("🌊 Three Anchor Bay Kayak Radio")
+# YouTube Video ID from your link
+YOUTUBE_VIDEO_ID = "_wYENnYaboM"
+
+# Hidden YouTube embed HTML with autoplay and loop
+youtube_embed = f"""
+<iframe id="ytplayer" type="text/html" width="0" height="0"
+  src="https://www.youtube.com/embed/{YOUTUBE_VIDEO_ID}?autoplay=1&loop=1&playlist={YOUTUBE_VIDEO_ID}&controls=0&showinfo=0&rel=0"
+  frameborder="0" allowfullscreen style="display:none"></iframe>
+"""
+
+# Session state for mute toggle
+if 'muted' not in st.session_state:
+    st.session_state.muted = False  # Start with sound ON
+
+# Header with Radio Toggle Button
+col1, col2 = st.columns([1, 6])
+with col1:
+    if st.session_state.muted:
+        if st.button("🔇 Radio Off", key="toggle"):
+            st.session_state.muted = False
+            st.rerun()
+        status_emoji = "🔇"
+        status_text = "Radio Off"
+    else:
+        if st.button("🔊 Radio On", key="toggle"):
+            st.session_state.muted = True
+            st.rerun()
+        status_emoji = "🔊"
+        status_text = "Radio On"
+
+with col2:
+    st.title(f"🌊 Three Anchor Bay Kayak Radio  {status_emoji}")
+
 st.markdown("""
-Welcome to your AI-powered kayaking companion! Enjoy non-stop 90s hits while getting real-time weather updates and safety tips for Three Anchor Bay, Cape Town.
-Perfect for planning relaxed paddles along the Atlantic seaboard.
+Welcome to your AI-powered kayaking companion radio!  
+90s hits play in the background while you check conditions and safety tips for Three Anchor Bay, Cape Town.  
+Use the button above to mute or unmute the music anytime.
 """)
 
-# Live Music Stream
-st.header("🎶 Live 90s Hits Radio (24/7)")
-embed_code = """
-<iframe width="100%" height="400" src="https://www.youtube.com/embed/_wYENnYaboM?autoplay=1&mute=0&loop=1&playlist=_wYENnYaboM" 
-frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-allowfullscreen></iframe>
-"""
-st.components.v1.html(embed_code, height=400)
+# Inject hidden YouTube player + JavaScript to control volume
+st.components.v1.html(
+    f"""
+    {youtube_embed if not st.session_state.muted else ''}
+    <script>
+        function toggleMute(muted) {{
+            const iframe = document.getElementById('ytplayer');
+            if (iframe) {{
+                iframe.contentWindow.postMessage(
+                    JSON.stringify({{event: 'command', func: 'setVolume', args: [muted ? 0 : 100]}}),
+                    '*'
+                );
+            }}
+        }}
+        // Initial mute state
+        toggleMute({str(st.session_state.muted).lower()});
+    </script>
+    """,
+    height=0
+)
 
 # Weather & Conditions
 st.header("🌤️ Current Kayaking Conditions in Three Anchor Bay")
@@ -51,7 +95,7 @@ try:
     with col3:
         st.metric("Wave Height", f"{wave_height} m", f"Swell: {swell_height} m")
 
-    # Simple AI-like safety assessment
+    # Safety assessment
     if wind_speed > 25 or wave_height > 1.5:
         assessment = "Poor conditions – Strong winds or high waves. Avoid paddling, especially for beginners."
         color = "🔴"
@@ -64,9 +108,9 @@ try:
 
     st.subheader("Kayaking Suitability")
     st.markdown(f"**{color} {assessment}**")
-    st.write(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')} (refreshes on reload)")
+    st.write(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-    # Voice narration for weather assessment
+    # Voice narration
     narration_text = f"Current kayaking conditions in Three Anchor Bay: Temperature {temp} degrees Celsius, feels like {feels_like}. Wind speed {wind_speed} kilometers per hour from {wind_dir} degrees. Wave height {wave_height} meters. {assessment}"
 
     if st.button("🔊 Speak Updates"):
@@ -77,10 +121,10 @@ try:
             audio_bytes.seek(0)
             st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
-except Exception as e:
+except Exception:
     st.error("Weather data temporarily unavailable. Check back soon!")
 
-# Safety Tips with optional voice
+# Safety Tips
 st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
 
 with st.expander("For Beginners"):
@@ -115,8 +159,9 @@ with st.expander("For Experienced Paddlers"):
         audio_bytes.seek(0)
         st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
-st.markdown("Sources: Local guides like Kaskazi Kayaks & general ocean safety best practices.")
-
-# Footer
+# Footer with source credit
 st.markdown("---")
-st.markdown("Built with ❤️ using Streamlit | Music: Best of Nostalgia 90s Hits Live Stream | Voice powered by gTTS")
+st.markdown("""
+**Music Source:** 90s Hits Live Radio by *Best of Nostalgia* on YouTube  
+Built with ❤️ using Streamlit | Voice powered by gTTS
+""")
