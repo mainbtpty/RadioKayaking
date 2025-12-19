@@ -6,21 +6,14 @@ from io import BytesIO
 
 st.set_page_config(page_title="Three Anchor Bay Kayak Radio", layout="wide")
 
-# YouTube Video ID
-YOUTUBE_VIDEO_ID = "_wYENnYaboM"
+# Direct 90s radio stream URL (reliable, legal for embedding)
+RADIO_STREAM_URL = "https://listen.181fm.com/181-star90s_128k.mp3"
 
-# Hidden YouTube embed with autoplay, initial mute, loop, and JS API
-youtube_embed = f"""
-<iframe id="ytplayer" type="text/html" width="0" height="0"
-  src="https://www.youtube.com/embed/{YOUTUBE_VIDEO_ID}?autoplay=1&mute=1&loop=1&playlist={YOUTUBE_VIDEO_ID}&controls=0&showinfo=0&rel=0&enablejsapi=1"
-  frameborder="0" allowfullscreen style="display:none"></iframe>
-"""
-
-# Session state for sound toggle (True = muted/silent)
+# Session state for sound toggle (True = muted)
 if 'muted' not in st.session_state:
-    st.session_state.muted = True  # Start muted (silent but playing)
+    st.session_state.muted = True  # Start muted – requires one click to enable sound (browser policy)
 
-# Header with Toggle
+# Header with Toggle Button
 col1, col2 = st.columns([1, 6])
 with col1:
     if st.session_state.muted:
@@ -33,46 +26,32 @@ with col1:
             st.rerun()
 
 with col2:
-    status = "🔇 (muted - click to hear)" if st.session_state.muted else "🔊"
+    status = "🔇 (click to turn on)" if st.session_state.muted else "🔊"
     st.title(f"🌊 Three Anchor Bay Kayak Radio  {status}")
 
 st.markdown("""
 Welcome to your AI-powered kayaking companion radio!  
-90s hits play silently in the background on load—**click the button to turn sound on** (required by browsers for audio).  
-Toggle anytime to mute/unmute.
+Non-stop 90s pop hits play in the background.  
+**Click the button to turn sound on** (browsers require this one click for audio). Toggle anytime to mute/unmute.
 """)
 
-# Always inject the player + JS to control mute/unmute and ensure play
-volume = 0 if st.session_state.muted else 100
-st.components.v1.html(
-    f"""
-    {youtube_embed}
-    <script>
-        function controlVolume() {{
-            const iframe = document.getElementById('ytplayer');
-            if (iframe) {{
-                iframe.contentWindow.postMessage(
-                    JSON.stringify({{event: 'command', func: 'setVolume', args: [{volume}]}}),
-                    '*'
-                );
-                if ({volume} > 0) {{
-                    iframe.contentWindow.postMessage(
-                        JSON.stringify({{event: 'command', func: 'playVideo', args: []}}),
-                        '*'
-                    );
-                }}
-            }}
-        }}
-        // Run on load and every 3 seconds for reliability
-        window.addEventListener('load', controlVolume);
-        setInterval(controlVolume, 3000);
-    </script>
-    """,
-    height=0
+# Hidden background audio player with autoplay and mute control
+st.audio(
+    RADIO_STREAM_URL,
+    format="audio/mp3",
+    autoplay=not st.session_state.muted,  # Autoplay when unmuted
+    start_time=0
 )
 
-# Rest of the app (weather, tips, etc.) unchanged...
-# [Paste the weather, assessment, voice, safety tips, and firearms from previous code here]
+# Optional: Hide the default controls visually (still functional via toggle)
+st.markdown(
+    """
+    <style>
+        audio { display: none; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # Weather & Conditions
 st.header("🌤️ Current Kayaking Conditions in Three Anchor Bay")
@@ -103,6 +82,7 @@ try:
     with col3:
         st.metric("Wave Height", f"{wave_height} m", f"Swell: {swell_height} m")
 
+    # Safety assessment
     if wind_speed > 25 or wave_height > 1.5:
         assessment = "Poor conditions – Strong winds or high waves. Avoid paddling, especially for beginners."
         color = "🔴"
@@ -117,6 +97,7 @@ try:
     st.markdown(f"**{color} {assessment}**")
     st.write(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
+    # Voice narration
     narration_text = f"Current kayaking conditions in Three Anchor Bay: Temperature {temp} degrees Celsius, feels like {feels_like}. Wind speed {wind_speed} kilometers per hour from {wind_dir} degrees. Wave height {wave_height} meters. {assessment}"
 
     if st.button("🔊 Speak Updates"):
@@ -130,13 +111,45 @@ try:
 except Exception:
     st.error("Weather data temporarily unavailable. Check back soon!")
 
-# Safety Tips (unchanged)
-# [Paste the expanders with tips and voice buttons from previous]
+# Safety Tips
+st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
+
+with st.expander("For Beginners"):
+    beginner_tips = """
+    - Always wear a PFD (life jacket)—it's mandatory on the Atlantic.
+    - Paddle with a buddy or join a guided group (like Kaskazi Kayaks).
+    - Mornings are often calmer due to shelter from Table Mountain.
+    - Stay close to shore; currents can be strong.
+    - Wear sunscreen, a hat, and quick-dry clothes—the sun is intense here.
+    """
+    st.markdown(beginner_tips)
+    if st.button("🔊 Read Beginner Tips Aloud", key="beginner"):
+        tts = gTTS(text=beginner_tips.replace("- ", "").replace("\n", " "), lang='en')
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+
+with st.expander("For Experienced Paddlers"):
+    experienced_tips = """
+    - Monitor swell and offshore winds—the Southeaster can build quickly.
+    - Know your escape points like ladders and beaches along the Sea Point promenade.
+    - Cold water shock is a risk—dress for immersion.
+    - Avoid solo paddles in winds over 20 kilometers per hour or waves over 1.5 meters.
+    - Always tell someone your float plan.
+    """
+    st.markdown(experienced_tips)
+    if st.button("🔊 Read Experienced Tips Aloud", key="experienced"):
+        tts = gTTS(text=experienced_tips.replace("- ", "").replace("\n", " "), lang='en')
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
 # Footer
 st.markdown("---")
 st.markdown("""
-**Music Source:** 90s Hits Live Radio by *Best of Nostalgia* on YouTube  
+**Music Source:** 181.fm - Star 90's (non-stop 90s pop hits)  
 Built with ❤️ using Streamlit | Voice powered by gTTS  
-Note: Browsers require a click to enable sound for security—no full auto-sound on load.
+Note: One click required to enable sound (browser security policy).
 """)
