@@ -1,24 +1,27 @@
 import streamlit as st
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from gtts import gTTS
 from io import BytesIO
 
-st.set_page_config(page_title="Cape Kayak Adventure Radio", layout="wide")
+st.set_page_config(page_title="Cape Kayak Adventure Radio FM", layout="wide")
 
-# Direct 90s radio stream URL
+# Direct 90s radio stream URL (verified active as of Dec 2025 – if issues, try alternative like 'https://listen.181fm.com/181-90sdance_128k.mp3')
 RADIO_STREAM_URL = "https://listen.181fm.com/181-star90s_128k.mp3"
 
-# Session state for sound toggle (True = muted)
+# Session state
 if 'muted' not in st.session_state:
-    st.session_state.muted = True  # Start muted – one click to enable sound
+    st.session_state.muted = True  # Start muted
+if 'last_jingle' not in st.session_state:
+    st.session_state.last_jingle = datetime.now() - timedelta(minutes=3)  # Force first jingle on unmute
 
-# Header with Toggle Button
+# Header
 col1, col2 = st.columns([1, 6])
 with col1:
     if st.session_state.muted:
         if st.button("🔇 Sound Off", key="toggle"):
             st.session_state.muted = False
+            st.session_state.last_jingle = datetime.now() - timedelta(minutes=3)  # Ready for jingle
             st.rerun()
     else:
         if st.button("🔊 Sound On", key="toggle"):
@@ -29,39 +32,29 @@ with col2:
     status = "🔇 (click to turn on)" if st.session_state.muted else "🔊"
     st.title(f"🌊 Cape Kayak Adventure Radio FM  {status}")
 
-# Radio Jingle on Load (plays once per session)
-if 'jingle_played' not in st.session_state:
-    st.session_state.jingle_played = True
-    jingle_text = "Welcome to Cape Kayak Adventure Radio FM in Three Anchor Bay!"
-    tts = gTTS(text=jingle_text, lang='en')
-    jingle_audio = BytesIO()
-    tts.write_to_fp(jingle_audio)
-    jingle_audio.seek(0)
-    st.audio(jingle_audio, format="audio/mp3", autoplay=True)
-
 st.markdown("""
-Welcome to **Cape Kayak Adventure Radio FM** – your AI-powered companion for kayaking in Three Anchor Bay, Cape Town!  
-Non-stop 90s pop hits in the background. Click the button to turn sound on (one click required by browsers). Toggle anytime.
+Welcome to **Cape Kayak Adventure Radio FM** – non-stop 90s hits for kayakers in Three Anchor Bay, Cape Town!  
+Click the button to turn on sound (one click required). The station jingle plays on start and every few minutes.
 """)
 
-# Hidden background audio player
-st.audio(
-    RADIO_STREAM_URL,
-    format="audio/mp3",
-    autoplay=not st.session_state.muted,
-    start_time=0
-)
+# Background music (hidden)
+if not st.session_state.muted:
+    st.audio(RADIO_STREAM_URL, format="audio/mp3", autoplay=True, start_time=0)
+    st.markdown("<style>audio { display: none; }</style>", unsafe_allow_html=True)
 
-st.markdown(
-    """
-    <style>
-        audio { display: none; }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+    # Jingle logic: Play on unmute + every ~3 minutes
+    now = datetime.now()
+    if now - st.session_state.last_jingle >= timedelta(minutes=3):
+        jingle_text = "You're listening to Cape Kayak Adventure Radio FM in Three Anchor Bay – your soundtrack for Atlantic paddling adventures!"
+        with st.spinner("Playing station jingle..."):
+            tts = gTTS(text=jingle_text, lang='en')
+            jingle_audio = BytesIO()
+            tts.write_to_fp(jingle_audio)
+            jingle_audio.seek(0)
+            st.audio(jingle_audio, format="audio/mp3", autoplay=True)
+        st.session_state.last_jingle = now
 
-# Weather & Conditions
+# Weather Section
 st.header("🌤️ Current Kayaking Conditions in Three Anchor Bay")
 lat, lon = -33.9083, 18.3958
 
@@ -69,80 +62,120 @@ forecast_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude
 marine_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={lat}&longitude={lon}&current=wave_height,wave_period,wind_wave_height,swell_wave_height"
 
 try:
-    forecast_data = requests.get(forecast_url).json()
-    marine_data = requests.get(marine_url).json()
+    forecast_response = requests.get(forecast_url)
+    forecast_response.raise_for_status()  # Raise error if request fails
+    forecast_data = forecast_response.json()["current"]
 
-    current = forecast_data["current"]
-    marine_current = marine_data["current"]
+    marine_response = requests.get(marine_url)
+    marine_response.raise_for_status()
+    marine_data = marine_response.json()["current"]
 
-    temp = current["temperature_2m"]
-    feels_like = current["apparent_temperature"]
-    wind_speed = current["wind_speed_10m"]
-    wind_dir = current["wind_direction_10m"]
-    wave_height = marine_current["wave_height"][0] if isinstance(marine_current["wave_height"], list) else marine_current["wave_height"]
-    swell_height = marine_current.get("swell_wave_height", [None])[0] or "Low"
+    temp = forecast_data.get("temperature_2m", "N/A")
+    feels_like = forecast_data.get("apparent_temperature", "N/A")
+    wind_speed = forecast_data.get("wind_speed_10m", "N/A")
+    wind_dir = forecast_data.get("wind_direction_10m", "N/A")
+    wave_height = marine_data.get("wave_height", 1.0) if not isinstance(marine_data.get("wave_height"), list) else marine_data.get("wave_height", [1.0])[0]
+    swell_height = marine_data.get("swell_wave_height", 0.5) if not isinstance(marine_data.get("swell_wave_height"), list) else marine_data.get("swell_wave_height", [0.5])[0]
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Temperature", f"{temp}°C", f"Feels like {feels_like}°C")
+        st.metric("Temperature", f"{temp}°C" if temp != "N/A" else "N/A", f"Feels like {feels_like}°C")
     with col2:
-        st.metric("Wind Speed", f"{wind_speed} km/h", f"Direction: {wind_dir}°")
+        st.metric("Wind Speed", f"{wind_speed} km/h" if wind_speed != "N/A" else "N/A", f"Direction: {wind_dir}°")
     with col3:
         st.metric("Wave Height", f"{wave_height} m", f"Swell: {swell_height} m")
 
-    # Safety assessment
-    if wind_speed > 25 or wave_height > 1.5:
-        assessment = "Poor conditions – strong winds or high waves. Avoid paddling today, especially for beginners."
+    if wind_speed == "N/A" or (isinstance(wind_speed, (int, float)) and wind_speed > 25) or wave_height > 1.5:
+        assessment = "Poor conditions – strong winds or high waves. Avoid paddling today."
         color = "🔴"
-    elif wind_speed > 15 or wave_height > 1:
-        assessment = "Moderate conditions – caution advised. Best for experienced paddlers."
+    elif (isinstance(wind_speed, (int, float)) and wind_speed > 15) or wave_height > 1:
+        assessment = "Moderate conditions – caution advised. Experienced paddlers only."
         color = "🟡"
     else:
-        assessment = "Good conditions – calm and ideal for all levels. Get out on the water!"
+        assessment = "Good conditions – calm and perfect for kayaking!"
         color = "🟢"
 
     st.subheader("Kayaking Suitability")
     st.markdown(f"**{color} {assessment}**")
     st.write(f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 
-    # Full spoken forecast text
-    forecast_text = f"Weather forecast for kayaking in Three Anchor Bay, Cape Town: Current temperature is {temp} degrees Celsius, feeling like {feels_like}. Wind speed {wind_speed} kilometers per hour from {wind_dir} degrees. Wave height {wave_height} meters with swell around {swell_height} meters. Overall: {assessment} Safe paddling!"
+    forecast_text = f"Weather update for Three Anchor Bay kayaking: Temperature {temp} degrees, feels like {feels_like}. Wind {wind_speed} kilometers per hour from {wind_dir} degrees. Waves {wave_height} meters. {assessment.replace(' – ', '. ')} Paddle safe!"
 
     if st.button("🔊 Speak Full Weather Forecast"):
-        with st.spinner("Generating voice..."):
+        with st.spinner("Speaking forecast..."):
             tts = gTTS(text=forecast_text, lang='en')
             audio_bytes = BytesIO()
             tts.write_to_fp(audio_bytes)
             audio_bytes.seek(0)
             st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
-except Exception:
-    st.error("Weather data temporarily unavailable. Check back soon!")
+except Exception as e:
+    st.warning(f"Weather API issue: {str(e)} – Refresh to retry or check connection.")
+    # Fallback metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Temperature", "N/A")
+    with col2:
+        st.metric("Wind Speed", "N/A")
+    with col3:
+        st.metric("Wave Height", "N/A")
+    st.subheader("Kayaking Suitability: Data unavailable – try again soon.")
 
-# Safety Tips (unchanged)
+# Safety Tips
 st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
-# ... (keep your existing expanders here)
+
+with st.expander("For Beginners"):
+    beginner_tips = """
+    - Always wear a PFD (life jacket)—it's mandatory on the Atlantic.
+    - Paddle with a buddy or join a guided group (like Kaskazi Kayaks).
+    - Mornings are often calmer due to shelter from Table Mountain.
+    - Stay close to shore; currents can be strong.
+    - Wear sunscreen, a hat, and quick-dry clothes—the sun is intense here.
+    """
+    st.markdown(beginner_tips)
+    if st.button("🔊 Read Beginner Tips Aloud", key="beginner"):
+        tts = gTTS(text=beginner_tips.replace("- ", "").replace("\n", " "), lang='en')
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+
+with st.expander("For Experienced Paddlers"):
+    experienced_tips = """
+    - Monitor swell and offshore winds—the Southeaster can build quickly.
+    - Know your escape points like ladders and beaches along the Sea Point promenade.
+    - Cold water shock is a risk—dress for immersion.
+    - Avoid solo paddles in winds over 20 kilometers per hour or waves over 1.5 meters.
+    - Always tell someone your float plan.
+    """
+    st.markdown(experienced_tips)
+    if st.button("🔊 Read Experienced Tips Aloud", key="experienced"):
+        tts = gTTS(text=experienced_tips.replace("- ", "").replace("\n", " "), lang='en')
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+
+st.markdown("Sources: Local guides like Kaskazi Kayaks & general ocean safety best practices.")
 
 # Guided Tours Section
 st.header("🛶 Cape Kayak Adventure Guided Tours")
 st.markdown("""
-Ready for a real adventure? Book a **guided kayak tour** with the experts right here in Three Anchor Bay!
+The original and best since 1995 – right here in Three Anchor Bay!
 
-**Cape Kayak Adventures** (the original since 1995) offers breathtaking guided trips along the Atlantic Seaboard. Paddle with seals, dolphins, penguins, and even whales in season – all with stunning views of Table Mountain!
+**Cape Kayak Adventures** offers incredible guided trips in the Table Mountain National Marine Protected Area. Spot seals, dolphins, whales (in season), and paddle with epic views.
 
-- No experience needed
-- Morning, sunset, and full moon tours
-- Safe, fun, and unforgettable
+- No experience required
+- Morning, sunset & full moon tours
+- Expert guides for safety & fun
 
-Visit their official site to book: [kayak.co.za](https://kayak.co.za/)
-
-Highly recommended for beginners and pros alike!
+Book now: [kayak.co.za](https://kayak.co.za/)
 """)
 
 # Footer
 st.markdown("---")
 st.markdown("""
-**Music Source:** 181.fm - Star 90's (non-stop 90s pop hits)  
-Built with ❤️ using Streamlit | Voice powered by gTTS  
-One click required to enable background music (browser policy).
+**Music:** 181.fm Star 90's | Voice: gTTS | Built with ❤️ Streamlit  
+Jingle plays after turning on radio & every ~3 minutes.
+Note: If radio doesn't play, check browser permissions or try a different browser. Stream is active.
 """)
