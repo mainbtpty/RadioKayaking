@@ -115,3 +115,27 @@ except Exception as e:
 # Visuals
 st.header("🌊 Kayaking in Three Anchor Bay")
 st.markdown("Stunning views of Table Mountain and chances to spot seals & dolphins on guided tours!")
+
+# Safety Tips & Tours
+st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
+# (Keep your existing expanders here)
+
+st.header("🛶 Cape Kayak Adventure Guided Tours")
+st.markdown("""
+The original and best since 1995 – right here in Three Anchor Bay!
+
+**Cape Kayak Adventures** offers incredible guided trips in the Table Mountain National Marine Protected Area. Spot seals, dolphins, whales (in season), and paddle with epic views.
+
+- No experience required
+- Morning, sunset & full moon tours
+- Expert guides for safety & fun
+
+Book now: [kayak.co.za](https://kayak.co.za/)
+""")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+**Music:** 181.fm Star 90's | Voice: gTTS | Built with ❤️ Streamlit  
+Jingle plays after turning on radio & every ~3 minutes.
+""")
