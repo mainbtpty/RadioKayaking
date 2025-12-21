@@ -176,6 +176,6 @@ Book now: [kayak.co.za](https://kayak.co.za/)
 st.markdown("---")
 st.markdown("""
 **Music:** 181.fm Star 90's | Voice: gTTS | Built with ❤️ Streamlit  
-Jingle plays after turning on radio & every ~3 minutes.
+Developer : Oni Charles linkedIn https://www.linkedin.com/in/charles-oni-b45a91253/
 Note: If radio doesn't play, check browser permissions or try a different browser. Stream is active.
 """)
