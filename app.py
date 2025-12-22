@@ -134,7 +134,7 @@ if 'temp' in st.session_state:
             st.session_state.first_unmute = False
 
     # Manual button
-    if st.button("🔊 Speak Forecast (DJ Style)"):
+    if st.button("🔊 Speak Forecast"):
         tts = gTTS(text=forecast_text, lang='en')
         audio = BytesIO()
         tts.write_to_fp(audio)
