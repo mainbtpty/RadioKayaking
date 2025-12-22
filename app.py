@@ -185,20 +185,8 @@ Experience the best views of Cape Town and get up close and personal with ocean 
 
 ## Explore Table Mountain National Marine Park
 
-Top rated on Trip Advisor
-
-## Journey into nature
-
-## Types of tours
-
-### Morning tours
-
+Top rated on Trip 
 Paddle into the sunset and enjoy picturesque views and a breathtaking sunset from the water.
-
-### Moonrise tours
-
-Enjoy the tranquillity of the golden hour while we watch the moon rise over Table Bay and observe the glowing city lights.
-
 ### Guide training
 
 Got dreams of becoming a kayak guide? We can help you make those dreams come true. Reach out to us via our contact form.
@@ -216,6 +204,6 @@ Book now: [kayak.co.za](https://kayak.co.za/)
 # Footer
 st.markdown("---")
 st.markdown("""
-**Music:** 181.fm Star 90's | **Voice:** gTTS | Built with ❤️ Streamlit  
+**Music:** 181 fm Star 90's | **Voice:** gTTS | Built with ❤️ Streamlit  
 Developer: Oni Charles – LinkedIn: [linkedin.com/in/charles-oni-b45a91253](https://www.linkedin.com/in/charles-oni-b45a91253/)
 """)
