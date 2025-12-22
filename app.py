@@ -9,7 +9,7 @@ st.set_page_config(page_title="Cape Kayak Adventure Radio FM", layout="wide")
 # Reliable 90s stream
 RADIO_STREAM_URL = "https://listen.181fm.com/181-star90s_128k.mp3"
 
-# Session state initialization
+# Session state
 if 'muted' not in st.session_state:
     st.session_state.muted = True
 if 'last_weather_update' not in st.session_state:
@@ -26,7 +26,7 @@ with col1:
         if st.button("🔇 Sound Off", key="toggle"):
             st.session_state.muted = False
             st.session_state.first_unmute = True
-            st.session_state.last_forecast = datetime.now() - timedelta(minutes=3)  # Trigger forecast now
+            st.session_state.last_forecast = datetime.now() - timedelta(minutes=3)
             st.rerun()
     else:
         if st.button("🔊 Sound On", key="toggle"):
@@ -42,9 +42,9 @@ Welcome to **Cape Kayak Adventure Radio FM** – non-stop 90s hits for kayakers 
 Weather updates every 10 min • DJ forecast every 3 min (auto-plays over music with volume ducking).
 """)
 
-# Background radio (hidden)
+# Background radio (no key, always same when present)
 if not st.session_state.muted:
-    st.audio(RADIO_STREAM_URL, format="audio/mp3", autoplay=True, key="radio_audio")
+    st.audio(RADIO_STREAM_URL, format="audio/mp3", autoplay=True)
     st.markdown("<style>audio { display: none; }</style>", unsafe_allow_html=True)
 
 # Weather update every 10 minutes
@@ -52,11 +52,11 @@ now = datetime.now()
 if now - st.session_state.last_weather_update >= timedelta(minutes=10):
     try:
         forecast_data = requests.get(
-            f"https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m",
+            "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m",
             timeout=10
         ).json()["current"]
         marine_data = requests.get(
-            f"https://marine-api.open-meteo.com/v1/marine?latitude=-33.9083&longitude=18.3958&current=wave_height,swell_wave_height",
+            "https://marine-api.open-meteo.com/v1/marine?latitude=-33.9083&longitude=18.3958&current=wave_height,swell_wave_height",
             timeout=10
         ).json()["current"]
 
@@ -83,11 +83,11 @@ if now - st.session_state.last_weather_update >= timedelta(minutes=10):
 
     except Exception:
         if 'temp' not in st.session_state:
-            st.session_state.temp = st.session_state.feels_like = st.session_state.wind_speed = "N/A"
+            st.session_state.temp = "N/A"
             st.session_state.assessment = "Data unavailable"
             st.session_state.color = "⚪"
 
-# Display current weather
+# Display weather
 st.header("🌤️ Current Kayaking Conditions in Three Anchor Bay")
 if 'temp' in st.session_state:
     col1, col2, col3 = st.columns(3)
@@ -102,18 +102,17 @@ if 'temp' in st.session_state:
     st.markdown(f"**{st.session_state.color} {st.session_state.assessment}**")
     st.write(f"Updated: {st.session_state.last_weather_update.strftime('%Y-%m-%d %H:%M')}")
 
-    # DJ-style forecast text
     forecast_text = f"Hey paddlers, this is your Cape Kayak Adventure Radio DJ with the latest from Three Anchor Bay! We're sitting at {st.session_state.temp} degrees, feeling like {st.session_state.feels_like}. Winds at {st.session_state.wind_speed} km/h from {st.session_state.wind_dir} degrees. Waves running {st.session_state.wave_height:.1f} meters. Bottom line: {st.session_state.assessment.lower()} Keep those paddles ready and enjoy the 90s vibes!"
 
-    # Auto-play forecast if radio on and time elapsed
+    # Auto forecast if due
     if not st.session_state.muted and (st.session_state.first_unmute or now - st.session_state.last_forecast >= timedelta(minutes=3)):
         tts = gTTS(text=forecast_text, lang='en')
         audio_bytes = BytesIO()
         tts.write_to_fp(audio_bytes)
         audio_bytes.seek(0)
-        st.audio(audio_bytes, format="audio/mp3", autoplay=True, key="forecast_auto")
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
-        # JavaScript to duck music volume during forecast
+        # Volume ducking JS (targets first audio as music, second as speech)
         st.components.v1.html(
             """
             <script>
@@ -121,14 +120,9 @@ if 'temp' in st.session_state:
             if (audios.length >= 2) {
                 const music = audios[0];
                 const speech = audios[1];
-                const originalVolume = music.volume || 1.0;
-                
-                speech.addEventListener('play', () => {
-                    music.volume = 0.3;  // Duck music
-                });
-                speech.addEventListener('ended', () => {
-                    music.volume = originalVolume;  // Restore
-                });
+                const origVol = music.volume || 1.0;
+                speech.onplay = () => music.volume = 0.3;
+                speech.onended = () => music.volume = origVol;
             }
             </script>
             """,
@@ -139,61 +133,75 @@ if 'temp' in st.session_state:
         if st.session_state.first_unmute:
             st.session_state.first_unmute = False
 
-    # Manual forecast button
+    # Manual button
     if st.button("🔊 Speak Forecast (DJ Style)"):
         tts = gTTS(text=forecast_text, lang='en')
         audio = BytesIO()
         tts.write_to_fp(audio)
         audio.seek(0)
-        st.audio(audio, format="audio/mp3", autoplay=True, key="forecast_manual")
+        st.audio(audio, format="audio/mp3", autoplay=True)
 
 # Safety Tips
 st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
+
 with st.expander("For Beginners"):
-    beginner_tips = "- Always wear a PFD (life jacket)—it's mandatory on the Atlantic. - Paddle with a buddy or join a guided group. - Mornings are often calmer. - Stay close to shore; currents can be strong. - Wear sunscreen, hat, and quick-dry clothes."
+    beginner_tips = """
+    - Always wear a PFD (life jacket)—it's mandatory on the Atlantic.
+    - Paddle with a buddy or join a guided group (like Kaskazi Kayaks).
+    - Mornings are often calmer due to shelter from Table Mountain.
+    - Stay close to shore; currents can be strong.
+    - Wear sunscreen, a hat, and quick-dry clothes—the sun is intense here.
+    """
     st.markdown(beginner_tips)
-    if st.button("🔊 Read Beginner Tips", key="beg"):
-        tts = gTTS(beginner_tips.replace("- ", ""), lang='en')
-        a = BytesIO(); tts.write_to_fp(a); a.seek(0)
-        st.audio(a, format="audio/mp3", autoplay=True, key="beg_audio")
+    if st.button("🔊 Read Beginner Tips Aloud", key="beginner"):
+        tts = gTTS(text=beginner_tips.replace("- ", "").replace("\n", " "), lang='en')
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
 with st.expander("For Experienced Paddlers"):
-    exp_tips = "- Monitor swell and offshore winds—the Southeaster builds fast. - Know escape points along Sea Point. - Dress for immersion. - Avoid solo in high winds/waves. - Tell someone your plan."
-    st.markdown(exp_tips)
-    if st.button("🔊 Read Experienced Tips", key="exp"):
-        tts = gTTS(exp_tips.replace("- ", ""), lang='en')
-        a = BytesIO(); tts.write_to_fp(a); a.seek(0)
-        st.audio(a, format="audio/mp3", autoplay=True, key="exp_audio")
+    experienced_tips = """
+    - Monitor swell and offshore winds—the Southeaster can build quickly.
+    - Know your escape points like ladders and beaches along the Sea Point promenade.
+    - Cold water shock is a risk—dress for immersion.
+    - Avoid solo paddles in winds over 20 kilometers per hour or waves over 1.5 meters.
+    - Always tell someone your float plan.
+    """
+    st.markdown(experienced_tips)
+    if st.button("🔊 Read Experienced Tips Aloud", key="experienced"):
+        tts = gTTS(text=experienced_tips.replace("- ", "").replace("\n", " "), lang='en')
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
-# Guided Tours (updated with document info)
+st.markdown("Sources: Local guides like Kaskazi Kayaks & general ocean safety best practices.")
+
+# Guided Tours (full from document)
 st.header("🛶 Cape Kayak Adventure Guided Tours")
 st.markdown("""
 Experience the best views of Cape Town and get up close and personal with ocean life during our guided kayak trips.
 
-**Explore Table Mountain National Marine Park**
-
-Cape Kayak Adventures has been operating fun and safe kayak tours since 1995 on the Atlantic Seaboard. We are based in the heart of the Marine Protected Area of the Table Mountain National Park in Cape Town, South Africa. We offer guided kayak adventures in the morning, at sunset and under the glorious full moon, weather permitting. Come and explore the rich diversity of marine life, the kelp forests and a refreshing perspective of Cape Town and Table Mountain. Our experienced and knowledgeable guides will teach you the basics of kayaking and lead you on a safe and enjoyable tour of the Cape Town coastline. We love sharing our passion with our guests!
+## Explore Table Mountain National Marine Park
 
 Top rated on Trip Advisor
 
-**Journey into nature**
+## Journey into nature
 
-On our kayak tours, you’ll embark on a journey through Cape Town’s iconic landmarks, paddling past Table Mountain, Robben Island, and the majestic Twelve Apostles. As you explore, you’ll encounter well-known shipwrecks and the chance to spot marine mammals like Heaviside’s dolphins, seals, whales, and even the occasional sunfish. With every stroke, the ocean reveals its secrets, offering unforgettable surprises and a truly immersive experience.
+## Types of tours
 
-**Types of tours**
+### Morning tours
 
-- **Morning tours**: Although there are no guarantees (they remain wild and free), we are often graced with marine wildlife sightings on these tours.
-- **Sunset tours**: Paddle into the sunset and enjoy picturesque views and a breathtaking sunset from the water.
-- **Moonrise tours**: Enjoy the tranquillity of the golden hour while we watch the moon rise over Table Bay and observe the glowing city lights.
-- **Guide training**: Got dreams of becoming a kayak guide? We can help you make those dreams come true. Reach out to us via our contact form.
+Paddle into the sunset and enjoy picturesque views and a breathtaking sunset from the water.
 
-**Our clients say it best**
+### Moonrise tours
 
-**Got questions?**
+Enjoy the tranquillity of the golden hour while we watch the moon rise over Table Bay and observe the glowing city lights.
 
-Feel free to explore our FAQ page for commonly asked questions or reach out to us directly using the form below, we’d love to assist you.
+### Guide training
 
-**Meeting details**
+Got dreams of becoming a kayak guide? We can help you make those dreams come true. Reach out to us via our contact form.
 
 #### Three Anchor Bay Beach
 
@@ -201,7 +209,6 @@ We meet at the Beach Shed.
 
  Location Map
 
- Call us
 
 Book now: [kayak.co.za](https://kayak.co.za/)
 """)
@@ -210,5 +217,5 @@ Book now: [kayak.co.za](https://kayak.co.za/)
 st.markdown("---")
 st.markdown("""
 **Music:** 181.fm Star 90's | **Voice:** gTTS | Built with ❤️ Streamlit  
-Developer: Oni Charles – [LinkedIn](https://www.linkedin.com/in/charles-oni-b45a91253/)
+Developer: Oni Charles – LinkedIn: [linkedin.com/in/charles-oni-b45a91253](https://www.linkedin.com/in/charles-oni-b45a91253/)
 """)
