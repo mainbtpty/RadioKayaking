@@ -39,7 +39,7 @@ with col2:
     status = "🔇 (click to turn on)" if st.session_state.muted else "🔊"
     st.title(f"🌊 Cape Kayak Adventure Radio FM  {status}")
 
-st.markdown("Non-stop 90s hits + real-time + forecast weather for safe kayaking in Three Anchor Bay!")
+st.markdown("Non-stop 90s hits + real-time + hourly forecast for safe kayaking in Three Anchor Bay!")
 
 # Background radio
 if not st.session_state.muted:
@@ -50,14 +50,16 @@ if not st.session_state.muted:
 now = datetime.now()
 if now - st.session_state.last_weather_update >= timedelta(minutes=10):
     try:
-        current_url = "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility,cloud_cover_low,wave_height,swell_wave_height,weather_code&timezone=auto"
+        # Current + hourly forecast (next 24 hours)
+        forecast_url = "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility,cloud_cover_low,wave_height,swell_wave_height,weather_code&hourly=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility,cloud_cover_low,wave_height,swell_wave_height&timezone=auto"
         daily_url = "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&timezone=auto&forecast_days=3"
 
-        current_resp = requests.get(current_url, timeout=10).json()
+        forecast_resp = requests.get(forecast_url, timeout=10).json()
         daily_resp = requests.get(daily_url, timeout=10).json()
 
         st.session_state.weather_data = {
-            'current': current_resp['current'],
+            'current': forecast_resp['current'],
+            'hourly': forecast_resp['hourly'],
             'daily': daily_resp['daily']
         }
         st.session_state.last_weather_update = now
@@ -66,9 +68,10 @@ if now - st.session_state.last_weather_update >= timedelta(minutes=10):
         st.warning(f"Update failed: {str(e)}. Using last data or refresh.")
 
 data = st.session_state.weather_data.get('current', {})
+hourly = st.session_state.weather_data.get('hourly', {})
 daily = st.session_state.weather_data.get('daily', {})
 
-# Current Conditions Layout
+# Current Conditions
 st.header("🌤️ Current Kayaking Conditions – Three Anchor Bay")
 if data:
     col1, col2, col3, col4 = st.columns(4)
@@ -79,8 +82,8 @@ if data:
     with col3:
         wave_h = data.get('wave_height')
         swell_h = data.get('swell_wave_height')
-        wave_display = f"{wave_h} m" if wave_h is not None else "N/A"
-        swell_display = f"{swell_h} m" if swell_h is not None else "N/A"
+        wave_display = f"{wave_h:.1f} m" if wave_h is not None else "N/A"
+        swell_display = f"{swell_h:.1f} m" if swell_h is not None else "N/A"
         st.metric("Wave Height", wave_display, f"Swell: {swell_display}")
     with col4:
         vis = data.get('visibility', 10000)
@@ -95,7 +98,7 @@ if data:
         else:
             st.info("Visibility data not available")
 
-    # Suitability (safe handling of None values)
+    # Suitability
     wind_val = data.get('wind_speed_10m') or 0
     wave_val = data.get('wave_height') or 0.0
     vis_val = data.get('visibility') or 10000
@@ -152,10 +155,65 @@ if data:
         audio.seek(0)
         st.audio(audio, format="audio/mp3", autoplay=True)
 
-else:
-    st.info("Loading weather... refresh if empty.")
+# Hourly Forecast (next 24 hours)
+st.header("⏰ Hourly Forecast – Next 24 Hours")
+if 'hourly' in st.session_state.weather_data:
+    hourly_times = st.session_state.weather_data['hourly']['time']
+    hourly_temp = st.session_state.weather_data['hourly']['temperature_2m']
+    hourly_feels = st.session_state.weather_data['hourly']['apparent_temperature']
+    hourly_wind = st.session_state.weather_data['hourly']['wind_speed_10m']
+    hourly_vis = st.session_state.weather_data['hourly']['visibility']
+    hourly_wave = st.session_state.weather_data['hourly'].get('wave_height', [None] * len(hourly_times))
 
-# Next-Day & Day-After Forecasts (unchanged from previous)
+    # Show only next 24 hours
+    hourly_table = []
+    for i in range(min(24, len(hourly_times))):
+        time_str = datetime.fromisoformat(hourly_times[i]).strftime('%H:%M')
+        temp_str = f"{hourly_temp[i]}°C"
+        feels_str = f"{hourly_feels[i]}°C"
+        wind_str = f"{hourly_wind[i]} km/h"
+        vis_str = f"{hourly_vis[i]} m" if hourly_vis[i] is not None else "N/A"
+        wave_str = f"{hourly_wave[i]:.1f} m" if hourly_wave[i] is not None else "N/A"
+
+        # Simple suitability per hour
+        wind_v = hourly_wind[i]
+        wave_v = hourly_wave[i] or 0.0
+        vis_v = hourly_vis[i] or 10000
+        if wind_v > 25 or wave_v > 1.5 or vis_v < 1000:
+            suitability = "Poor"
+            color = "#ffcccc"
+        elif wind_v > 15 or wave_v > 1 or vis_v < 5000:
+            suitability = "Moderate"
+            color = "#fff3cd"
+        else:
+            suitability = "Good"
+            color = "#d4edda"
+
+        hourly_table.append({
+            "Time": time_str,
+            "Temp (Feels)": f"{temp_str} ({feels_str})",
+            "Wind": wind_str,
+            "Wave": wave_str,
+            "Visibility": vis_str,
+            "Suitability": suitability
+        })
+
+    # Display as interactive table
+    st.dataframe(
+        hourly_table,
+        column_config={
+            "Suitability": st.column_config.TextColumn(
+                "Suitability",
+                width="medium",
+            )
+        },
+        hide_index=True,
+        use_container_width=True
+    )
+else:
+    st.info("Hourly forecast loading... refresh if empty.")
+
+# Daily Forecasts (Tomorrow & Day After)
 st.header("📅 Forecast – Tomorrow & Day After")
 if 'daily' in st.session_state.weather_data and len(st.session_state.weather_data['daily'].get('time', [])) >= 3:
     daily_times = st.session_state.weather_data['daily']['time']
@@ -175,17 +233,16 @@ if 'daily' in st.session_state.weather_data and len(st.session_state.weather_dat
             with colC:
                 st.metric("Precip Probability", f"{daily_precip_prob[day_offset]}%")
             st.info(f"Weather code: {daily_codes[day_offset]} (check WMO codes for details)")
-            st.caption("Waves, fog/visibility not available in daily forecast – check current/hourly closer to the date.")
+            st.caption("Waves & visibility not available in daily forecast – check hourly closer to the date.")
 else:
     st.info("Daily forecast loading...")
 
-# Safety Tips & Guided Tours sections remain the same as your previous working version
-# Paste your existing expanders and markdown here if needed
+# Safety Tips & Guided Tours (unchanged – paste your existing sections here)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 **Music:** 181.fm Star 90's | **Voice:** gTTS | Built with ❤️ Streamlit  
 Developer: Oni Charles – LinkedIn: [linkedin.com/in/charles-oni-b45a91253](https://www.linkedin.com/in/charles-oni-b45a91253/)  
-Data from Open-Meteo – real-time, but model runs may have slight delay.
+Data from Open-Meteo – real-time, but coastal wave data can be missing.
 """)
