@@ -39,7 +39,7 @@ with col2:
     status = "🔇 (click to turn on)" if st.session_state.muted else "🔊"
     st.title(f"🌊 Cape Kayak Adventure Radio FM  {status}")
 
-st.markdown("Non-stop 90s hits + real-time + hourly forecast for safe kayaking in Three Anchor Bay!")
+st.markdown("Non-stop 90s hits + real-time + forecast weather for safe kayaking in Three Anchor Bay!")
 
 # Background radio
 if not st.session_state.muted:
@@ -50,16 +50,14 @@ if not st.session_state.muted:
 now = datetime.now()
 if now - st.session_state.last_weather_update >= timedelta(minutes=10):
     try:
-        # Current + hourly forecast (next 24 hours)
-        forecast_url = "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility,cloud_cover_low,wave_height,swell_wave_height,weather_code&hourly=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility,cloud_cover_low,wave_height,swell_wave_height&timezone=auto"
+        current_url = "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility,cloud_cover_low,wave_height,swell_wave_height,weather_code&timezone=auto"
         daily_url = "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&timezone=auto&forecast_days=3"
 
-        forecast_resp = requests.get(forecast_url, timeout=10).json()
+        current_resp = requests.get(current_url, timeout=10).json()
         daily_resp = requests.get(daily_url, timeout=10).json()
 
         st.session_state.weather_data = {
-            'current': forecast_resp['current'],
-            'hourly': forecast_resp['hourly'],
+            'current': current_resp['current'],
             'daily': daily_resp['daily']
         }
         st.session_state.last_weather_update = now
@@ -68,10 +66,9 @@ if now - st.session_state.last_weather_update >= timedelta(minutes=10):
         st.warning(f"Update failed: {str(e)}. Using last data or refresh.")
 
 data = st.session_state.weather_data.get('current', {})
-hourly = st.session_state.weather_data.get('hourly', {})
 daily = st.session_state.weather_data.get('daily', {})
 
-# Current Conditions
+# Current Conditions Layout
 st.header("🌤️ Current Kayaking Conditions – Three Anchor Bay")
 if data:
     col1, col2, col3, col4 = st.columns(4)
@@ -85,6 +82,8 @@ if data:
         wave_display = f"{wave_h:.1f} m" if wave_h is not None else "N/A"
         swell_display = f"{swell_h:.1f} m" if swell_h is not None else "N/A"
         st.metric("Wave Height", wave_display, f"Swell: {swell_display}")
+        if wave_h is None or swell_h is None:
+            st.caption("Wave data temporarily unavailable near this coastal spot (common in bays). Rely on wind & visibility for safety.")
     with col4:
         vis = data.get('visibility', 10000)
         vis_display = f"{vis} m" if vis is not None else "N/A"
@@ -98,7 +97,7 @@ if data:
         else:
             st.info("Visibility data not available")
 
-    # Suitability
+    # Suitability (safe None handling)
     wind_val = data.get('wind_speed_10m') or 0
     wave_val = data.get('wave_height') or 0.0
     vis_val = data.get('visibility') or 10000
@@ -118,7 +117,7 @@ if data:
     st.markdown(f"**{color} {assessment}**")
     st.write(f"Updated: {datetime.fromisoformat(data['time']).strftime('%Y-%m-%d %H:%M')} SAST")
 
-    # DJ forecast text
+    # DJ forecast text (safe wave handling)
     wave_text = f"{wave_val:.1f} m" if wave_val > 0 else "N/A"
     forecast_text = f"Hey paddlers! Cape Kayak Adventure Radio DJ here with the latest for Three Anchor Bay: Temp {data.get('temperature_2m')}°C (feels {data.get('apparent_temperature')}°C), wind {data.get('wind_speed_10m')} km/h from {data.get('wind_direction_10m')}°. Waves {wave_text}. Visibility {vis_val} m – watch for fog if low! {assessment.lower()} Stay safe and keep vibing!"
 
@@ -155,65 +154,10 @@ if data:
         audio.seek(0)
         st.audio(audio, format="audio/mp3", autoplay=True)
 
-# Hourly Forecast (next 24 hours)
-st.header("⏰ Hourly Forecast – Next 24 Hours")
-if 'hourly' in st.session_state.weather_data:
-    hourly_times = st.session_state.weather_data['hourly']['time']
-    hourly_temp = st.session_state.weather_data['hourly']['temperature_2m']
-    hourly_feels = st.session_state.weather_data['hourly']['apparent_temperature']
-    hourly_wind = st.session_state.weather_data['hourly']['wind_speed_10m']
-    hourly_vis = st.session_state.weather_data['hourly']['visibility']
-    hourly_wave = st.session_state.weather_data['hourly'].get('wave_height', [None] * len(hourly_times))
-
-    # Show only next 24 hours
-    hourly_table = []
-    for i in range(min(24, len(hourly_times))):
-        time_str = datetime.fromisoformat(hourly_times[i]).strftime('%H:%M')
-        temp_str = f"{hourly_temp[i]}°C"
-        feels_str = f"{hourly_feels[i]}°C"
-        wind_str = f"{hourly_wind[i]} km/h"
-        vis_str = f"{hourly_vis[i]} m" if hourly_vis[i] is not None else "N/A"
-        wave_str = f"{hourly_wave[i]:.1f} m" if hourly_wave[i] is not None else "N/A"
-
-        # Simple suitability per hour
-        wind_v = hourly_wind[i]
-        wave_v = hourly_wave[i] or 0.0
-        vis_v = hourly_vis[i] or 10000
-        if wind_v > 25 or wave_v > 1.5 or vis_v < 1000:
-            suitability = "Poor"
-            color = "#ffcccc"
-        elif wind_v > 15 or wave_v > 1 or vis_v < 5000:
-            suitability = "Moderate"
-            color = "#fff3cd"
-        else:
-            suitability = "Good"
-            color = "#d4edda"
-
-        hourly_table.append({
-            "Time": time_str,
-            "Temp (Feels)": f"{temp_str} ({feels_str})",
-            "Wind": wind_str,
-            "Wave": wave_str,
-            "Visibility": vis_str,
-            "Suitability": suitability
-        })
-
-    # Display as interactive table
-    st.dataframe(
-        hourly_table,
-        column_config={
-            "Suitability": st.column_config.TextColumn(
-                "Suitability",
-                width="medium",
-            )
-        },
-        hide_index=True,
-        use_container_width=True
-    )
 else:
-    st.info("Hourly forecast loading... refresh if empty.")
+    st.info("Loading weather... refresh if empty.")
 
-# Daily Forecasts (Tomorrow & Day After)
+# Next-Day & Day-After Forecasts
 st.header("📅 Forecast – Tomorrow & Day After")
 if 'daily' in st.session_state.weather_data and len(st.session_state.weather_data['daily'].get('time', [])) >= 3:
     daily_times = st.session_state.weather_data['daily']['time']
@@ -233,16 +177,103 @@ if 'daily' in st.session_state.weather_data and len(st.session_state.weather_dat
             with colC:
                 st.metric("Precip Probability", f"{daily_precip_prob[day_offset]}%")
             st.info(f"Weather code: {daily_codes[day_offset]} (check WMO codes for details)")
-            st.caption("Waves & visibility not available in daily forecast – check hourly closer to the date.")
+            st.caption("Waves & visibility not available in daily forecast – check current/hourly closer to the date.")
 else:
     st.info("Daily forecast loading...")
 
-# Safety Tips & Guided Tours (unchanged – paste your existing sections here)
+# Safety Tips
+st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
+
+with st.expander("For Beginners"):
+    beginner_tips = """
+    - Always wear a PFD (life jacket)—it's mandatory on the Atlantic.
+    - Paddle with a buddy or join a guided group (like Kaskazi Kayaks).
+    - Mornings are often calmer due to shelter from Table Mountain.
+    - Stay close to shore; currents can be strong.
+    - Wear sunscreen, a hat, and quick-dry clothes—the sun is intense here.
+    """
+    st.markdown(beginner_tips)
+    if st.button("🔊 Read Beginner Tips Aloud", key="beginner"):
+        tts = gTTS(text=beginner_tips.replace("- ", "").replace("\n", " "), lang='en')
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+
+with st.expander("For Experienced Paddlers"):
+    experienced_tips = """
+    - Monitor swell and offshore winds—the Southeaster can build quickly.
+    - Know your escape points like ladders and beaches along the Sea Point promenade.
+    - Cold water shock is a risk—dress for immersion.
+    - Avoid solo paddles in winds over 20 kilometers per hour or waves over 1.5 meters.
+    - Always tell someone your float plan.
+    """
+    st.markdown(experienced_tips)
+    if st.button("🔊 Read Experienced Tips Aloud", key="experienced"):
+        tts = gTTS(text=experienced_tips.replace("- ", "").replace("\n", " "), lang='en')
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+
+st.markdown("Sources: Local guides like Kaskazi Kayaks & general ocean safety best practices.")
+
+# Guided Tours (full from your document)
+st.header("🛶 Cape Kayak Adventure Guided Tours")
+st.markdown("""
+Experience the best views of Cape Town and get up close and personal with ocean life during our guided kayak trips.
+
+## Explore Table Mountain National Marine Park
+
+Cape Kayak Adventures has been operating fun and safe kayak tours since 1995 on the Atlantic Seaboard. We are based in the heart of the Marine Protected Area of the Table Mountain National Park in Cape Town, South Africa. We offer guided kayak adventures in the morning, at sunset and under the glorious full moon, weather permitting. Come and explore the rich diversity of marine life, the kelp forests and a refreshing perspective of Cape Town and Table Mountain. Our experienced and knowledgeable guides will teach you the basics of kayaking and lead you on a safe and enjoyable tour of the Cape Town coastline. We love sharing our passion with our guests!
+
+Top rated on Trip Advisor
+
+## Journey into nature
+
+On our kayak tours, you’ll embark on a journey through Cape Town’s iconic landmarks, paddling past Table Mountain, Robben Island, and the majestic Twelve Apostles. As you explore, you’ll encounter well-known shipwrecks and the chance to spot marine mammals like Heaviside’s dolphins, seals, whales, and even the occasional sunfish. With every stroke, the ocean reveals its secrets, offering unforgettable surprises and a truly immersive experience.
+
+## Types of tours
+
+### Morning tours
+
+Although there are no guarantees (they remain wild and free), we are often graced with marine wildlife sightings on these tours.
+
+### Sunset tours
+
+Paddle into the sunset and enjoy picturesque views and a breathtaking sunset from the water.
+
+### Moonrise tours
+
+Enjoy the tranquillity of the golden hour while we watch the moon rise over Table Bay and observe the glowing city lights.
+
+### Guide training
+
+Got dreams of becoming a kayak guide? We can help you make those dreams come true. Reach out to us via our contact form.
+
+## Our clients say it best
+
+## Got questions?
+
+Feel free to explore our FAQ page for commonly asked questions or reach out to us directly using the form below, we’d love to assist you.
+
+## Meeting details
+
+#### Three Anchor Bay Beach
+
+We meet at the Beach Shed.
+
+ Location Map
+
+ Call us
+
+Book now: [kayak.co.za](https://kayak.co.za/)
+""")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 **Music:** 181.fm Star 90's | **Voice:** gTTS | Built with ❤️ Streamlit  
 Developer: Oni Charles – LinkedIn: [linkedin.com/in/charles-oni-b45a91253](https://www.linkedin.com/in/charles-oni-b45a91253/)  
-Data from Open-Meteo – real-time, but coastal wave data can be missing.
+Data from Open-Meteo – real-time, but wave data can be missing in bays/coastal spots.
 """)
