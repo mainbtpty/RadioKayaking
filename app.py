@@ -18,8 +18,6 @@ if 'last_forecast' not in st.session_state:
     st.session_state.last_forecast = datetime.now() - timedelta(minutes=3)
 if 'first_unmute' not in st.session_state:
     st.session_state.first_unmute = True
-if 'weather_data' not in st.session_state:
-    st.session_state.weather_data = {}
 
 # Header & Toggle
 col1, col2 = st.columns([1, 6])
@@ -39,89 +37,74 @@ with col2:
     status = "🔇 (click to turn on)" if st.session_state.muted else "🔊"
     st.title(f"🌊 Cape Kayak Adventure Radio FM  {status}")
 
-st.markdown("Non-stop 90s hits + real-time + forecast weather for safe kayaking in Three Anchor Bay!")
+st.markdown("""
+Welcome to **Cape Kayak Adventure Radio FM** – non-stop 90s hits for kayakers in Three Anchor Bay, Cape Town!  
+Weather updates every 10 min • DJ forecast every 3 min (auto-plays over music with volume ducking).
+""")
 
-# Background radio
+# Background radio (no key, always same when present)
 if not st.session_state.muted:
     st.audio(RADIO_STREAM_URL, format="audio/mp3", autoplay=True)
     st.markdown("<style>audio { display: none; }</style>", unsafe_allow_html=True)
 
-# Fetch / update weather
+# Weather update every 10 minutes
 now = datetime.now()
 if now - st.session_state.last_weather_update >= timedelta(minutes=10):
     try:
-        current_url = "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility,cloud_cover_low,wave_height,swell_wave_height,weather_code&timezone=auto"
-        daily_url = "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&timezone=auto&forecast_days=3"
+        forecast_data = requests.get(
+            "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m",
+            timeout=10
+        ).json()["current"]
+        marine_data = requests.get(
+            "https://marine-api.open-meteo.com/v1/marine?latitude=-33.9083&longitude=18.3958&current=wave_height,swell_wave_height",
+            timeout=10
+        ).json()["current"]
 
-        current_resp = requests.get(current_url, timeout=10).json()
-        daily_resp = requests.get(daily_url, timeout=10).json()
+        st.session_state.temp = forecast_data.get("temperature_2m", "N/A")
+        st.session_state.feels_like = forecast_data.get("apparent_temperature", "N/A")
+        st.session_state.wind_speed = forecast_data.get("wind_speed_10m", "N/A")
+        st.session_state.wind_dir = forecast_data.get("wind_direction_10m", "N/A")
+        st.session_state.wave_height = marine_data.get("wave_height", [1.0])[0] if isinstance(marine_data.get("wave_height"), list) else marine_data.get("wave_height", 1.0)
+        st.session_state.swell_height = marine_data.get("swell_wave_height", [0.5])[0] if isinstance(marine_data.get("swell_wave_height"), list) else marine_data.get("swell_wave_height", 0.5)
 
-        st.session_state.weather_data = {
-            'current': current_resp['current'],
-            'daily': daily_resp['daily']
-        }
+        wind_val = st.session_state.wind_speed if isinstance(st.session_state.wind_speed, (int, float)) else 0
+        wave_val = st.session_state.wave_height
+        if wind_val > 25 or wave_val > 1.5:
+            st.session_state.assessment = "Poor conditions – strong winds or high waves. Avoid paddling today."
+            st.session_state.color = "🔴"
+        elif wind_val > 15 or wave_val > 1:
+            st.session_state.assessment = "Moderate conditions – caution advised. Experienced paddlers only."
+            st.session_state.color = "🟡"
+        else:
+            st.session_state.assessment = "Good conditions – calm and perfect for kayaking!"
+            st.session_state.color = "🟢"
+
         st.session_state.last_weather_update = now
 
-    except Exception as e:
-        st.warning(f"Update failed: {str(e)}. Using last data or refresh.")
+    except Exception:
+        if 'temp' not in st.session_state:
+            st.session_state.temp = "N/A"
+            st.session_state.assessment = "Data unavailable"
+            st.session_state.color = "⚪"
 
-data = st.session_state.weather_data.get('current', {})
-daily = st.session_state.weather_data.get('daily', {})
-
-# Current Conditions Layout
-st.header("🌤️ Current Kayaking Conditions – Three Anchor Bay")
-if data:
-    col1, col2, col3, col4 = st.columns(4)
+# Display weather
+st.header("🌤️ Current Kayaking Conditions in Three Anchor Bay")
+if 'temp' in st.session_state:
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Temperature", f"{data.get('temperature_2m', 'N/A')}°C", f"Feels {data.get('apparent_temperature', 'N/A')}°C")
+        st.metric("Temperature", f"{st.session_state.temp}°C", f"Feels {st.session_state.feels_like}°C")
     with col2:
-        st.metric("Wind", f"{data.get('wind_speed_10m', 'N/A')} km/h", f"from {data.get('wind_direction_10m', 'N/A')}°")
+        st.metric("Wind Speed", f"{st.session_state.wind_speed} km/h", f"Dir: {st.session_state.wind_dir}°")
     with col3:
-        wave_h = data.get('wave_height')
-        swell_h = data.get('swell_wave_height')
-        wave_display = f"{wave_h:.1f} m" if wave_h is not None else "N/A"
-        swell_display = f"{swell_h:.1f} m" if swell_h is not None else "N/A"
-        st.metric("Wave Height", wave_display, f"Swell: {swell_display}")
-        if wave_h is None or swell_h is None:
-            st.caption("Wave data temporarily unavailable near this coastal spot (common in bays). Rely on wind & visibility for safety.")
-    with col4:
-        vis = data.get('visibility', 10000)
-        vis_display = f"{vis} m" if vis is not None else "N/A"
-        st.metric("Visibility", vis_display)
-        if vis is not None and vis < 1000:
-            st.error("Heavy Fog – Very Low Visibility! Do not launch.")
-        elif vis is not None and vis < 5000:
-            st.warning("Foggy – Reduced Visibility. Caution advised.")
-        elif vis is not None:
-            st.success("Good Visibility")
-        else:
-            st.info("Visibility data not available")
+        st.metric("Wave Height", f"{st.session_state.wave_height:.1f} m", f"Swell: {st.session_state.swell_height:.1f} m")
 
-    # Suitability (safe None handling)
-    wind_val = data.get('wind_speed_10m') or 0
-    wave_val = data.get('wave_height') or 0.0
-    vis_val = data.get('visibility') or 10000
-    low_cloud = data.get('cloud_cover_low') or 0
+    st.subheader("Kayaking Suitability")
+    st.markdown(f"**{st.session_state.color} {st.session_state.assessment}**")
+    st.write(f"Updated: {st.session_state.last_weather_update.strftime('%Y-%m-%d %H:%M')}")
 
-    if wind_val > 25 or wave_val > 1.5 or vis_val < 1000 or low_cloud > 80:
-        assessment = "Poor – high wind, waves, fog, or low visibility. No go today."
-        color = "🔴"
-    elif wind_val > 15 or wave_val > 1 or vis_val < 5000 or low_cloud > 50:
-        assessment = "Moderate – caution for wind, waves or fog. Experienced only."
-        color = "🟡"
-    else:
-        assessment = "Good – calm, clear, and ideal for paddling!"
-        color = "🟢"
+    forecast_text = f"Hey paddlers, this is your Cape Kayak Adventure Radio DJ with the latest from Three Anchor Bay! We're sitting at {st.session_state.temp} degrees, feeling like {st.session_state.feels_like}. Winds at {st.session_state.wind_speed} km/h from {st.session_state.wind_dir} degrees. Waves running {st.session_state.wave_height:.1f} meters. Bottom line: {st.session_state.assessment.lower()} Keep those paddles ready and enjoy the 90s vibes!"
 
-    st.subheader("Kayaking Suitability (incl. Waves & Fog/Visibility)")
-    st.markdown(f"**{color} {assessment}**")
-    st.write(f"Updated: {datetime.fromisoformat(data['time']).strftime('%Y-%m-%d %H:%M')} SAST")
-
-    # DJ forecast text (safe wave handling)
-    wave_text = f"{wave_val:.1f} m" if wave_val > 0 else "N/A"
-    forecast_text = f"Hey paddlers! Cape Kayak Adventure Radio DJ here with the latest for Three Anchor Bay: Temp {data.get('temperature_2m')}°C (feels {data.get('apparent_temperature')}°C), wind {data.get('wind_speed_10m')} km/h from {data.get('wind_direction_10m')}°. Waves {wave_text}. Visibility {vis_val} m – watch for fog if low! {assessment.lower()} Stay safe and keep vibing!"
-
-    # Auto DJ forecast
+    # Auto forecast if due
     if not st.session_state.muted and (st.session_state.first_unmute or now - st.session_state.last_forecast >= timedelta(minutes=3)):
         tts = gTTS(text=forecast_text, lang='en')
         audio_bytes = BytesIO()
@@ -129,6 +112,7 @@ if data:
         audio_bytes.seek(0)
         st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
+        # Volume ducking JS (targets first audio as music, second as speech)
         st.components.v1.html(
             """
             <script>
@@ -136,8 +120,9 @@ if data:
             if (audios.length >= 2) {
                 const music = audios[0];
                 const speech = audios[1];
+                const origVol = music.volume || 1.0;
                 speech.onplay = () => music.volume = 0.3;
-                speech.onended = () => music.volume = 1.0;
+                speech.onended = () => music.volume = origVol;
             }
             </script>
             """,
@@ -145,41 +130,16 @@ if data:
         )
 
         st.session_state.last_forecast = now
-        st.session_state.first_unmute = False
+        if st.session_state.first_unmute:
+            st.session_state.first_unmute = False
 
-    if st.button("🔊 Hear DJ Forecast Now"):
+    # Manual button
+    if st.button("🔊 Speak Forecast (DJ Style)"):
         tts = gTTS(text=forecast_text, lang='en')
         audio = BytesIO()
         tts.write_to_fp(audio)
         audio.seek(0)
         st.audio(audio, format="audio/mp3", autoplay=True)
-
-else:
-    st.info("Loading weather... refresh if empty.")
-
-# Next-Day & Day-After Forecasts
-st.header("📅 Forecast – Tomorrow & Day After")
-if 'daily' in st.session_state.weather_data and len(st.session_state.weather_data['daily'].get('time', [])) >= 3:
-    daily_times = st.session_state.weather_data['daily']['time']
-    daily_codes = st.session_state.weather_data['daily']['weather_code']
-    daily_max_temp = st.session_state.weather_data['daily']['temperature_2m_max']
-    daily_min_temp = st.session_state.weather_data['daily']['temperature_2m_min']
-    daily_max_wind = st.session_state.weather_data['daily']['wind_speed_10m_max']
-    daily_precip_prob = st.session_state.weather_data['daily']['precipitation_probability_max']
-
-    for day_offset, label in [(1, "Tomorrow"), (2, "Day After")]:
-        with st.expander(f"{label} – {daily_times[day_offset]}"):
-            colA, colB, colC = st.columns(3)
-            with colA:
-                st.metric("Max / Min Temp", f"{daily_max_temp[day_offset]}°C / {daily_min_temp[day_offset]}°C")
-            with colB:
-                st.metric("Max Wind", f"{daily_max_wind[day_offset]} km/h")
-            with colC:
-                st.metric("Precip Probability", f"{daily_precip_prob[day_offset]}%")
-            st.info(f"Weather code: {daily_codes[day_offset]} (check WMO codes for details)")
-            st.caption("Waves & visibility not available in daily forecast – check current/hourly closer to the date.")
-else:
-    st.info("Daily forecast loading...")
 
 # Safety Tips
 st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
@@ -218,7 +178,7 @@ with st.expander("For Experienced Paddlers"):
 
 st.markdown("Sources: Local guides like Kaskazi Kayaks & general ocean safety best practices.")
 
-# Guided Tours (full from your document)
+# Guided Tours (full from document)
 st.header("🛶 Cape Kayak Adventure Guided Tours")
 st.markdown("""
 Experience the best views of Cape Town and get up close and personal with ocean life during our guided kayak trips.
@@ -274,6 +234,5 @@ Book now: [kayak.co.za](https://kayak.co.za/)
 st.markdown("---")
 st.markdown("""
 **Music:** 181.fm Star 90's | **Voice:** gTTS | Built with ❤️ Streamlit  
-Developer: Oni Charles – LinkedIn: [linkedin.com/in/charles-oni-b45a91253](https://www.linkedin.com/in/charles-oni-b45a91253/)  
-Data from Open-Meteo – real-time, but wave data can be missing in bays/coastal spots.
+Developer: Oni Charles – LinkedIn: [linkedin.com/in/charles-oni-b45a91253](https://www.linkedin.com/in/charles-oni-b45a91253/)
 """)
