@@ -57,11 +57,29 @@ if now - st.session_state.last_weather_update >= timedelta(minutes=10):
             timeout=10
         ).json()["current"]
 
-        # Marine data – using slightly offshore coordinates from your document
+        # Current marine (wave & swell) - offshore coords for reliability
         marine_data = requests.get(
             "https://marine-api.open-meteo.com/v1/marine?latitude=-33.875&longitude=18.291672&current=wave_height,swell_wave_height",
             timeout=10
         ).json()["current"]
+
+        # Hourly forecast (land-based)
+        hourly_land = requests.get(
+            "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&hourly=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility&timezone=auto",
+            timeout=10
+        ).json()["hourly"]
+
+        # Hourly marine (wave height)
+        hourly_marine = requests.get(
+            "https://marine-api.open-meteo.com/v1/marine?latitude=-33.875&longitude=18.291672&hourly=wave_height,swell_wave_height&timezone=auto",
+            timeout=10
+        ).json()["hourly"]
+
+        # Daily forecast
+        daily_data = requests.get(
+            "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&timezone=auto&forecast_days=3",
+            timeout=10
+        ).json()["daily"]
 
         st.session_state.temp = forecast_data.get("temperature_2m", "N/A")
         st.session_state.feels_like = forecast_data.get("apparent_temperature", "N/A")
@@ -70,6 +88,9 @@ if now - st.session_state.last_weather_update >= timedelta(minutes=10):
         st.session_state.visibility = forecast_data.get("visibility", "N/A")
         st.session_state.wave_height = marine_data.get("wave_height", [1.0])[0] if isinstance(marine_data.get("wave_height"), list) else marine_data.get("wave_height", 1.0)
         st.session_state.swell_height = marine_data.get("swell_wave_height", [0.5])[0] if isinstance(marine_data.get("swell_wave_height"), list) else marine_data.get("swell_wave_height", 0.5)
+        st.session_state.hourly_land = hourly_land
+        st.session_state.hourly_marine = hourly_marine
+        st.session_state.daily = daily_data
 
         wind_val = st.session_state.wind_speed if isinstance(st.session_state.wind_speed, (int, float)) else 0
         wave_val = st.session_state.wave_height
@@ -157,6 +178,98 @@ if 'temp' in st.session_state:
         tts.write_to_fp(audio)
         audio.seek(0)
         st.audio(audio, format="audio/mp3", autoplay=True)
+
+# Hourly Forecast – Next 24 Hours (with wave height)
+st.header("⏰ Hourly Forecast – Next 24 Hours")
+if 'hourly' in st.session_state and 'hourly_marine' in st.session_state:
+    hourly = st.session_state.hourly
+    hourly_marine = st.session_state.hourly_marine
+    times = hourly['time'][:24]
+    temps = hourly['temperature_2m'][:24]
+    winds = hourly['wind_speed_10m'][:24]
+    viss = hourly['visibility'][:24]
+    waves = hourly_marine['wave_height'][:24]
+
+    # Prepare data
+    df_data = []
+    row_colors = []
+
+    for i in range(len(times)):
+        t_str = datetime.fromisoformat(times[i]).strftime('%H:%M')
+        temp_str = f"{temps[i]}°"
+        wind_str = f"{winds[i]}"
+        vis_km = viss[i] / 1000 if viss[i] is not None else None
+        vis_str = f"{vis_km:.1f} km" if vis_km is not None else "N/A"
+        wave_str = f"{waves[i]:.1f}" if waves[i] is not None else "N/A"
+
+        # Suitability & color
+        wind_v = winds[i]
+        wave_v = waves[i] if waves[i] is not None else 0.0
+        vis_v = viss[i] if viss[i] is not None else 10000
+
+        if wind_v > 25 or wave_v > 1.5 or vis_v < 1000:
+            suit_text = "Poor"
+            bg_color = "#ffcccc"  # light red
+        elif wind_v > 15 or wave_v > 1 or vis_v < 5000:
+            suit_text = "Mod"
+            bg_color = "#fff3cd"  # light yellow
+        else:
+            suit_text = "Good"
+            bg_color = "#d4edda"  # light green
+
+        df_data.append([t_str, temp_str, wind_str, vis_str, wave_str, suit_text])
+        row_colors.append(bg_color)
+
+    import pandas as pd
+    df = pd.DataFrame(df_data, columns=["Time", "Temp", "Wind", "Vis", "Wave", "Suit"])
+
+    # Apply full row background color
+    def row_color(row):
+        color = row_colors[row.name]
+        return [f'background-color: {color}' for _ in row]
+
+    styled_df = df.style.apply(row_color, axis=1)
+
+    # Display first 12 hours + expander for full 24
+    st.dataframe(
+        styled_df.head(12),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Suit": st.column_config.TextColumn("Suit", width="small")
+        }
+    )
+
+    with st.expander("Show full 24 hours"):
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Suit": st.column_config.TextColumn("Suit", width="small")
+            }
+        )
+
+else:
+    st.info("Hourly data loading...")
+
+# Daily Forecast – Tomorrow & Day After
+st.header("📅 Forecast – Tomorrow & Day After")
+if 'daily' in st.session_state:
+    daily_times = st.session_state.daily['time'][1:3]  # tomorrow and day after
+    daily_codes = st.session_state.daily['weather_code'][1:3]
+    daily_max_temp = st.session_state.daily['temperature_2m_max'][1:3]
+    daily_min_temp = st.session_state.daily['temperature_2m_min'][1:3]
+    daily_max_wind = st.session_state.daily['wind_speed_10m_max'][1:3]
+    daily_precip = st.session_state.daily['precipitation_probability_max'][1:3]
+
+    for i, label in enumerate(["Tomorrow", "Day After"]):
+        with st.expander(label):
+            st.metric("Max / Min Temp", f"{daily_max_temp[i]}°C / {daily_min_temp[i]}°C")
+            st.metric("Max Wind", f"{daily_max_wind[i]} km/h")
+            st.metric("Precip Probability", f"{daily_precip[i]}%")
+            st.caption(f"Weather code: {daily_codes[i]} (check WMO codes for details)")
+            st.caption("Note: Wave & visibility not available in daily forecast – check hourly.")
 
 # Safety Tips
 st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
