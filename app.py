@@ -42,7 +42,7 @@ Welcome to **Cape Kayak Adventure Radio FM** – non-stop 90s hits for kayakers 
 Weather updates every 10 min • DJ forecast every 3 min (auto-plays over music with volume ducking).
 """)
 
-# Background radio (no key, always same when present)
+# Background radio
 if not st.session_state.muted:
     st.audio(RADIO_STREAM_URL, format="audio/mp3", autoplay=True)
     st.markdown("<style>audio { display: none; }</style>", unsafe_allow_html=True)
@@ -51,29 +51,49 @@ if not st.session_state.muted:
 now = datetime.now()
 if now - st.session_state.last_weather_update >= timedelta(minutes=10):
     try:
+        # Current conditions (including visibility)
         forecast_data = requests.get(
-            "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m",
+            "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility",
             timeout=10
         ).json()["current"]
+
+        # Marine data (wave & swell)
         marine_data = requests.get(
             "https://marine-api.open-meteo.com/v1/marine?latitude=-33.9083&longitude=18.3958&current=wave_height,swell_wave_height",
             timeout=10
         ).json()["current"]
 
+        # Hourly forecast (next 24 hours)
+        hourly_data = requests.get(
+            "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&hourly=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,visibility&timezone=auto",
+            timeout=10
+        ).json()["hourly"]
+
+        # Daily forecast (tomorrow & day after)
+        daily_data = requests.get(
+            "https://api.open-meteo.com/v1/forecast?latitude=-33.9083&longitude=18.3958&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&timezone=auto&forecast_days=3",
+            timeout=10
+        ).json()["daily"]
+
         st.session_state.temp = forecast_data.get("temperature_2m", "N/A")
         st.session_state.feels_like = forecast_data.get("apparent_temperature", "N/A")
         st.session_state.wind_speed = forecast_data.get("wind_speed_10m", "N/A")
         st.session_state.wind_dir = forecast_data.get("wind_direction_10m", "N/A")
+        st.session_state.visibility = forecast_data.get("visibility", "N/A")
         st.session_state.wave_height = marine_data.get("wave_height", [1.0])[0] if isinstance(marine_data.get("wave_height"), list) else marine_data.get("wave_height", 1.0)
         st.session_state.swell_height = marine_data.get("swell_wave_height", [0.5])[0] if isinstance(marine_data.get("swell_wave_height"), list) else marine_data.get("swell_wave_height", 0.5)
+        st.session_state.hourly = hourly_data
+        st.session_state.daily = daily_data
 
         wind_val = st.session_state.wind_speed if isinstance(st.session_state.wind_speed, (int, float)) else 0
         wave_val = st.session_state.wave_height
-        if wind_val > 25 or wave_val > 1.5:
-            st.session_state.assessment = "Poor conditions – strong winds or high waves. Avoid paddling today."
+        vis_val = st.session_state.visibility if isinstance(st.session_state.visibility, (int, float)) else 10000
+
+        if wind_val > 25 or wave_val > 1.5 or vis_val < 1000:
+            st.session_state.assessment = "Poor conditions – strong winds, high waves, or low visibility/fog. Avoid paddling today."
             st.session_state.color = "🔴"
-        elif wind_val > 15 or wave_val > 1:
-            st.session_state.assessment = "Moderate conditions – caution advised. Experienced paddlers only."
+        elif wind_val > 15 or wave_val > 1 or vis_val < 5000:
+            st.session_state.assessment = "Moderate conditions – caution advised for wind, waves or fog. Experienced paddlers only."
             st.session_state.color = "🟡"
         else:
             st.session_state.assessment = "Good conditions – calm and perfect for kayaking!"
@@ -87,22 +107,34 @@ if now - st.session_state.last_weather_update >= timedelta(minutes=10):
             st.session_state.assessment = "Data unavailable"
             st.session_state.color = "⚪"
 
-# Display weather
+# Display current weather
 st.header("🌤️ Current Kayaking Conditions in Three Anchor Bay")
 if 'temp' in st.session_state:
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Temperature", f"{st.session_state.temp}°C", f"Feels {st.session_state.feels_like}°C")
     with col2:
         st.metric("Wind Speed", f"{st.session_state.wind_speed} km/h", f"Dir: {st.session_state.wind_dir}°")
     with col3:
         st.metric("Wave Height", f"{st.session_state.wave_height:.1f} m", f"Swell: {st.session_state.swell_height:.1f} m")
+    with col4:
+        vis_val = st.session_state.visibility
+        vis_display = f"{vis_val} m" if isinstance(vis_val, (int, float)) else "N/A"
+        st.metric("Visibility", vis_display)
+        if isinstance(vis_val, (int, float)):
+            if vis_val < 1000:
+                st.error("Heavy Fog – Very Low Visibility! Do not launch.")
+            elif vis_val < 5000:
+                st.warning("Foggy – Reduced Visibility. Caution advised.")
+            else:
+                st.success("Good Visibility")
 
-    st.subheader("Kayaking Suitability")
+    st.subheader("Kayaking Suitability (incl. Waves & Fog/Visibility)")
     st.markdown(f"**{st.session_state.color} {st.session_state.assessment}**")
     st.write(f"Updated: {st.session_state.last_weather_update.strftime('%Y-%m-%d %H:%M')}")
 
-    forecast_text = f"Hey paddlers, this is your Cape Kayak Adventure Radio DJ with the latest from Three Anchor Bay! We're sitting at {st.session_state.temp} degrees, feeling like {st.session_state.feels_like}. Winds at {st.session_state.wind_speed} km/h from {st.session_state.wind_dir} degrees. Waves running {st.session_state.wave_height:.1f} meters. Bottom line: {st.session_state.assessment.lower()} Keep those paddles ready and enjoy the 90s vibes!"
+    # DJ forecast text (includes visibility)
+    forecast_text = f"Hey paddlers, this is your Cape Kayak Adventure Radio DJ with the latest from Three Anchor Bay! We're sitting at {st.session_state.temp} degrees, feeling like {st.session_state.feels_like}. Winds at {st.session_state.wind_speed} km/h from {st.session_state.wind_dir} degrees. Waves running {st.session_state.wave_height:.1f} meters. Visibility {vis_display} – watch for fog if low! Bottom line: {st.session_state.assessment.lower()} Keep those paddles ready and enjoy the 90s vibes!"
 
     # Auto forecast if due
     if not st.session_state.muted and (st.session_state.first_unmute or now - st.session_state.last_forecast >= timedelta(minutes=3)):
@@ -112,7 +144,6 @@ if 'temp' in st.session_state:
         audio_bytes.seek(0)
         st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
-        # Volume ducking JS (targets first audio as music, second as speech)
         st.components.v1.html(
             """
             <script>
@@ -141,7 +172,45 @@ if 'temp' in st.session_state:
         audio.seek(0)
         st.audio(audio, format="audio/mp3", autoplay=True)
 
-# Safety Tips
+# Hourly Forecast (next 24 hours)
+st.header("⏰ Hourly Forecast – Next 24 Hours")
+if 'hourly' in st.session_state:
+    hourly_times = st.session_state.hourly['time'][:24]
+    hourly_temp = st.session_state.hourly['temperature_2m'][:24]
+    hourly_feels = st.session_state.hourly['apparent_temperature'][:24]
+    hourly_wind = st.session_state.hourly['wind_speed_10m'][:24]
+    hourly_vis = st.session_state.hourly['visibility'][:24]
+
+    # Display as table
+    st.markdown("**Time | Temp (°C) | Feels Like (°C) | Wind (km/h) | Visibility (m)**")
+    for i in range(len(hourly_times)):
+        time_str = datetime.fromisoformat(hourly_times[i]).strftime('%H:%M')
+        temp_str = f"{hourly_temp[i]}"
+        feels_str = f"{hourly_feels[i]}"
+        wind_str = f"{hourly_wind[i]}"
+        vis_str = f"{hourly_vis[i]}" if hourly_vis[i] is not None else "N/A"
+        st.markdown(f"{time_str} | {temp_str} | {feels_str} | {wind_str} | {vis_str}")
+
+else:
+    st.info("Hourly data loading...")
+
+# Daily Forecast – Tomorrow & Day After
+st.header("📅 Forecast – Tomorrow & Day After")
+if 'daily' in st.session_state:
+    daily_times = st.session_state.daily['time'][1:3]  # tomorrow and day after
+    daily_max_temp = st.session_state.daily['temperature_2m_max'][1:3]
+    daily_min_temp = st.session_state.daily['temperature_2m_min'][1:3]
+    daily_max_wind = st.session_state.daily['wind_speed_10m_max'][1:3]
+    daily_precip = st.session_state.daily['precipitation_probability_max'][1:3]
+
+    for i, label in enumerate(["Tomorrow", "Day After"]):
+        with st.expander(label):
+            st.metric("Max / Min Temp", f"{daily_max_temp[i]}°C / {daily_min_temp[i]}°C")
+            st.metric("Max Wind", f"{daily_max_wind[i]} km/h")
+            st.metric("Precip Probability", f"{daily_precip[i]}%")
+            st.caption("Note: Wave & visibility not available in daily forecast – check hourly.")
+
+# Safety Tips & Guided Tours (unchanged)
 st.header("🛶 Safety Tips for Three Anchor Bay Kayaking")
 
 with st.expander("For Beginners"):
@@ -178,7 +247,6 @@ with st.expander("For Experienced Paddlers"):
 
 st.markdown("Sources: Local guides like Kaskazi Kayaks & general ocean safety best practices.")
 
-# Guided Tours (full from document)
 st.header("🛶 Cape Kayak Adventure Guided Tours")
 st.markdown("""
 Experience the best views of Cape Town and get up close and personal with ocean life during our guided kayak trips.
